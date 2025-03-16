@@ -26,6 +26,12 @@
     },
     "description": {
       "type": "text"
+    },
+    "subscriptions": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::subscription.subscription",
+      "mappedBy": "category"
     }
   }
 }
