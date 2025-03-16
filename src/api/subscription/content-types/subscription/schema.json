@@ -12,11 +12,10 @@
   "pluginOptions": {},
   "attributes": {
     "user": {
-      "type": "relation",
-      "relation": "manyToOne",
-      "target": "plugin::users-permissions.user",
-      "inversedBy": "subscriptions"
-    },
+  "type": "relation",
+  "relation": "manyToOne",
+  "target": "plugin::users-permissions.user"
+}
     "category": {
       "type": "relation",
       "relation": "manyToOne",
@@ -28,8 +27,7 @@
       "required": true
     },
     "endDate": {
-      "type": "date",
-      "required": true
+      "type": "date"
     },
     "status": {
       "type": "enumeration",
