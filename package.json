@@ -27,7 +27,8 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.11.0",
     "styled-components": "^6.0.0",
-    "temp": "^0.9.4"
+    "temp": "^0.9.4",
+    "pinecone-assistant": "file:src/plugins/pinecone-assistant"
   },
   "engines": {
     "node": ">=18.0.0 <=22.x.x",

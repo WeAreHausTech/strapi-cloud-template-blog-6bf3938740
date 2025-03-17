@@ -1,0 +1,9 @@
+{
+  "version": "v1",
+  "packages": {
+    "pinecone-assistant": {
+      "signature": "428f8359bb32a2ad5efd086fa3e56946",
+      "file": true
+    }
+  }
+}
