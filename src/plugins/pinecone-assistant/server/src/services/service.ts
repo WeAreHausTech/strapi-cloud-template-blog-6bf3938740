@@ -1,37 +1,10 @@
 import type { Core } from '@strapi/strapi';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { PineconeSettings, defaultSettings } from '../config/settings';
+import { Article, PineconeFile } from '../types';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-
-interface Article {
-  id: string;
-  title: string;
-  description?: string;
-  content: string;
-  locale?: string;
-  categories?: Array<{ id: string; name: string }>;
-  author?: { id: string; name: string };
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface PineconeFile {
-  id: string;
-  metadata: {
-    id: string;
-    title: string;
-    categories: string[];
-    categoryIds: string[];
-    author: string;
-    authorId: string;
-    locale: string;
-    type: string;
-    createdAt: string;
-    updatedAt: string;
-  };
-}
 
 const service = ({ strapi }: { strapi: Core.Strapi }) => {
   strapi.log.info('Pinecone Assistant plugin: Service initialized');
@@ -73,7 +46,8 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
       locale: article.locale || 'default',
       type: 'article',
       createdAt: article.createdAt,
-      updatedAt: article.updatedAt
+      updatedAt: article.updatedAt,
+      publishedAt: article.publishedAt
     };
   };
 
@@ -136,13 +110,13 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
       }
     },
 
-    async deleteArticle(documentId: string) {
+    async deleteArticle(documentId: string | number) {
       try {
         const assistant = getPineconeClient();
         const files = await assistant.listFiles();
         
         // Find the file with matching documentId in metadata
-        const fileToDelete = files.files.find(file => (file as PineconeFile).metadata.id === documentId);
+        const fileToDelete = files.files.find(file => (file as PineconeFile).metadata.id === String(documentId));
         
         if (fileToDelete) {
           await assistant.deleteFile((fileToDelete as PineconeFile).id);
@@ -189,6 +163,96 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
         return await this.uploadArticle(article);
       } catch (error) {
         strapi.log.error('Failed to force reindex article:', error);
+        throw error;
+      }
+    },
+
+    async reindexAllArticles() {
+      try {
+        const assistant = getPineconeClient();
+        
+        // Helper function to sleep
+        const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+        
+        // 1. Delete all existing files from Pinecone
+        const files = await assistant.listFiles();
+        strapi.log.info(`Found ${files.files.length} files in Pinecone to delete`);
+        for (const file of files.files) {
+          strapi.log.info(`Deleting file: ${(file as PineconeFile).metadata.title} (ID: ${(file as PineconeFile).id})`);
+          await assistant.deleteFile((file as PineconeFile).id);
+          // Add delay after each deletion
+          await sleep(2000);
+        }
+        strapi.log.info(`Deleted ${files.files.length} files from Pinecone`);
+        
+        // Wait a bit after all deletions are complete
+        await sleep(5000);
+
+        // 2. Get all articles from Strapi
+        const articles = await strapi.entityService.findMany('api::article.article', {
+          populate: ['categories', 'author']
+        });
+        strapi.log.info(`Found ${articles.length} articles in Strapi`);
+
+        // 3. Upload all articles
+        const results = [];
+        if (Array.isArray(articles)) {
+          for (const article of articles) {
+            try {
+              // Transform the article data to match our Article interface
+              const articleData: Article = {
+                id: article.id,
+                title: article.attributes?.title || article.title,
+                description: article.attributes?.description || article.description,
+                content: article.attributes?.content || article.content,
+                locale: article.attributes?.locale || article.locale,
+                categories: article.attributes?.categories?.data?.map(cat => ({
+                  id: cat.id,
+                  name: cat.attributes?.name || cat.name
+                })) || article.categories,
+                author: article.attributes?.author?.data ? {
+                  id: article.attributes.author.data.id,
+                  name: article.attributes.author.data.attributes?.name || article.attributes.author.data.name
+                } : article.author,
+                createdAt: article.attributes?.createdAt || article.createdAt,
+                updatedAt: article.attributes?.updatedAt || article.updatedAt,
+                publishedAt: article.attributes?.publishedAt || article.publishedAt,
+                slug: article.attributes?.slug || article.slug,
+                cover: article.attributes?.cover || article.cover,
+                blocks: article.attributes?.blocks || article.blocks
+              };
+
+              const result = await this.uploadArticle(articleData);
+              results.push(result);
+              strapi.log.info(`Uploaded article ${articleData.id}: ${articleData.title}`);
+              
+              // Add a longer delay between uploads (3 seconds)
+              await sleep(3000);
+            } catch (error) {
+              strapi.log.error(`Failed to upload article ${article.id}:`, error);
+              results.push({
+                status: 'error',
+                message: `Failed to upload article ${article.attributes?.title || article.title}`,
+                articleId: article.id,
+                error: error.message,
+                timestamp: new Date().toISOString()
+              });
+              // Add delay even after errors
+              await sleep(3000);
+            }
+          }
+        } else {
+          strapi.log.error('Articles is not an array:', articles);
+        }
+
+        return {
+          status: 'completed',
+          message: `Reindex completed. Processed ${articles.length} articles.`,
+          results,
+          timestamp: new Date().toISOString()
+        };
+      } catch (error) {
+        strapi.log.error('Failed to reindex articles:', error);
         throw error;
       }
     }
