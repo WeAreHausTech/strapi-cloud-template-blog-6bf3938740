@@ -1,19 +1,11 @@
 export default [
   {
     method: 'GET',
-    path: '/',
-    // name of the controller file & the method.
-    handler: 'controller.index',
-    config: {
-      policies: [],
-    },
-  },
-  {
-    method: 'GET',
     path: '/test-connection',
     handler: 'controller.testConnection',
     config: {
       policies: [],
+      auth: false,
     },
   },
   {
@@ -22,6 +14,7 @@ export default [
     handler: 'controller.testArticle',
     config: {
       policies: [],
+      auth: false,
     },
   },
   {
@@ -30,6 +23,7 @@ export default [
     handler: 'controller.listArticles',
     config: {
       policies: [],
+      auth: false,
     },
   },
   {
@@ -38,6 +32,37 @@ export default [
     handler: 'controller.forceReindexArticle',
     config: {
       policies: [],
+      auth: false,
+      params: {
+        id: {
+          type: 'string',
+          required: true,
+        },
+      },
+    },
+  },
+  {
+    method: 'POST',
+    path: '/reindex-all',
+    handler: 'controller.reindexAllArticles',
+    config: {
+      policies: [],
+      auth: false,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/inspect/:id',
+    handler: 'controller.inspectArticle',
+    config: {
+      policies: [],
+      auth: false,
+      params: {
+        id: {
+          type: 'string',
+          required: true,
+        },
+      },
     },
   }
 ];

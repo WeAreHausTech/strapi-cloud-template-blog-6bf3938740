@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const service = ({ strapi }: { strapi: Core.Strapi }) => {
+export default ({ strapi }: { strapi: Core.Strapi }) => {
   strapi.log.info('Pinecone Assistant plugin: Service initialized');
   
   const getPineconeClient = () => {
@@ -30,6 +30,7 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
       `- Language: ${article.locale || 'default'}`,
       `- ID: ${article.id}`,
       `- Author: ${article.author?.name || 'Unknown'}`,
+      `- Status: ${article.status || 'draft'}`,
       `- Created: ${article.createdAt}`,
       `- Last Updated: ${article.updatedAt}`
     ].filter(Boolean).join('\n\n');
@@ -47,7 +48,7 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
       type: 'article',
       createdAt: article.createdAt,
       updatedAt: article.updatedAt,
-      publishedAt: article.publishedAt
+      status: article.status || 'draft'
     };
   };
 
@@ -180,25 +181,41 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
         for (const file of files.files) {
           strapi.log.info(`Deleting file: ${(file as PineconeFile).metadata.title} (ID: ${(file as PineconeFile).id})`);
           await assistant.deleteFile((file as PineconeFile).id);
-          // Add delay after each deletion
-          await sleep(2000);
+          // Add longer delay after each deletion (5 seconds)
+          await sleep(5000);
         }
         strapi.log.info(`Deleted ${files.files.length} files from Pinecone`);
         
-        // Wait a bit after all deletions are complete
-        await sleep(5000);
+        // Wait longer after all deletions are complete (10 seconds)
+        await sleep(10000);
 
-        // 2. Get all articles from Strapi
+        // 2. Get all published articles from Strapi
         const articles = await strapi.entityService.findMany('api::article.article', {
-          populate: ['categories', 'author']
+          populate: {
+            categories: true,
+            author: true
+          },
+          status: 'published'  // Get only published articles
         });
-        strapi.log.info(`Found ${articles.length} articles in Strapi`);
+        strapi.log.info(`Found ${articles.length} published articles in Strapi`);
+
+        // Wait before starting uploads (5 seconds)
+        await sleep(5000);
 
         // 3. Upload all articles
         const results = [];
         if (Array.isArray(articles)) {
           for (const article of articles) {
             try {
+              // Debug logging for raw article data
+              strapi.log.info('Raw article data:', {
+                id: article.id,
+                documentId: article.documentId,
+                title: article.title,
+                publishedAt: article.publishedAt,
+                updatedAt: article.updatedAt
+              });
+
               // Transform the article data to match our Article interface
               const articleData: Article = {
                 id: article.id,
@@ -216,29 +233,40 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
                 } : article.author,
                 createdAt: article.attributes?.createdAt || article.createdAt,
                 updatedAt: article.attributes?.updatedAt || article.updatedAt,
-                publishedAt: article.attributes?.publishedAt || article.publishedAt,
+                status: 'published',  // We know it's published because we used status: 'published'
                 slug: article.attributes?.slug || article.slug,
                 cover: article.attributes?.cover || article.cover,
-                blocks: article.attributes?.blocks || article.blocks
+                blocks: article.attributes?.blocks || article.blocks,
+                documentId: article.documentId  // Include documentId to track versions
               };
+
+              // Debug logging for transformed article data
+              strapi.log.info('Transformed article data:', {
+                id: articleData.id,
+                documentId: articleData.documentId,
+                title: articleData.title,
+                status: articleData.status,
+                publishedAt: article.publishedAt
+              });
 
               const result = await this.uploadArticle(articleData);
               results.push(result);
-              strapi.log.info(`Uploaded article ${articleData.id}: ${articleData.title}`);
+              strapi.log.info(`Uploaded published article ${articleData.id} (documentId: ${articleData.documentId}): ${articleData.title}`);
               
-              // Add a longer delay between uploads (3 seconds)
-              await sleep(3000);
+              // Add a longer delay between uploads (8 seconds)
+              await sleep(8000);
             } catch (error) {
               strapi.log.error(`Failed to upload article ${article.id}:`, error);
               results.push({
                 status: 'error',
                 message: `Failed to upload article ${article.attributes?.title || article.title}`,
                 articleId: article.id,
+                documentId: article.documentId,
                 error: error.message,
                 timestamp: new Date().toISOString()
               });
-              // Add delay even after errors
-              await sleep(3000);
+              // Add longer delay even after errors (8 seconds)
+              await sleep(8000);
             }
           }
         } else {
@@ -247,7 +275,7 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
 
         return {
           status: 'completed',
-          message: `Reindex completed. Processed ${articles.length} articles.`,
+          message: `Reindex completed. Processed ${articles.length} published articles.`,
           results,
           timestamp: new Date().toISOString()
         };
@@ -255,8 +283,113 @@ const service = ({ strapi }: { strapi: Core.Strapi }) => {
         strapi.log.error('Failed to reindex articles:', error);
         throw error;
       }
+    },
+
+    async inspectArticle(articleId: string | number) {
+      try {
+        // Get both draft and published versions using the correct status parameter
+        const [draftArticle, publishedArticle] = await Promise.all([
+          strapi.entityService.findOne('api::article.article', articleId, {
+            populate: {
+              categories: true,
+              author: true
+            },
+            status: 'draft'  // Get draft version
+          }),
+          strapi.entityService.findOne('api::article.article', articleId, {
+            populate: {
+              categories: true,
+              author: true
+            },
+            status: 'published'  // Get published version
+          })
+        ]);
+
+        if (!draftArticle && !publishedArticle) {
+          return {
+            status: 'error',
+            message: `Article ${articleId} not found`,
+            timestamp: new Date().toISOString()
+          };
+        }
+
+        // Log the raw article data for inspection
+        strapi.log.info('Article inspection:', {
+          id: articleId,
+          hasDraft: !!draftArticle,
+          hasPublished: !!publishedArticle,
+          draft: draftArticle ? {
+            title: draftArticle.title,
+            publishedAt: draftArticle.publishedAt,
+            updatedAt: draftArticle.updatedAt,
+            documentId: draftArticle.documentId
+          } : null,
+          published: publishedArticle ? {
+            title: publishedArticle.title,
+            publishedAt: publishedArticle.publishedAt,
+            updatedAt: publishedArticle.updatedAt,
+            documentId: publishedArticle.documentId
+          } : null
+        });
+
+        return {
+          status: 'success',
+          data: {
+            id: articleId,
+            versions: {
+              draft: draftArticle ? {
+                title: draftArticle.title,
+                status: 'draft',
+                documentId: draftArticle.documentId,
+                timestamps: {
+                  publishedAt: draftArticle.publishedAt,
+                  createdAt: draftArticle.createdAt,
+                  updatedAt: draftArticle.updatedAt
+                },
+                categories: draftArticle.categories?.map(cat => ({
+                  id: cat.id,
+                  name: cat.name,
+                  publishedAt: cat.publishedAt
+                })),
+                author: draftArticle.author ? {
+                  id: draftArticle.author.id,
+                  name: draftArticle.author.name,
+                  publishedAt: draftArticle.author.publishedAt
+                } : null
+              } : null,
+              published: publishedArticle ? {
+                title: publishedArticle.title,
+                status: 'published',
+                documentId: publishedArticle.documentId,
+                timestamps: {
+                  publishedAt: publishedArticle.publishedAt,
+                  createdAt: publishedArticle.createdAt,
+                  updatedAt: publishedArticle.updatedAt
+                },
+                categories: publishedArticle.categories?.map(cat => ({
+                  id: cat.id,
+                  name: cat.name,
+                  publishedAt: cat.publishedAt
+                })),
+                author: publishedArticle.author ? {
+                  id: publishedArticle.author.id,
+                  name: publishedArticle.author.name,
+                  publishedAt: publishedArticle.author.publishedAt
+                } : null
+              } : null
+            },
+            // Include raw data for debugging
+            raw: {
+              draft: draftArticle,
+              published: publishedArticle
+            }
+          },
+          timestamp: new Date().toISOString()
+        };
+      } catch (error) {
+        strapi.log.error('Failed to inspect article:', error);
+        throw error;
+      }
     }
   };
 };
-
-export default service;
