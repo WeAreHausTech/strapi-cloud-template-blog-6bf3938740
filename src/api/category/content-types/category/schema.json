@@ -31,7 +31,7 @@
       "type": "relation",
       "relation": "manyToMany",
       "target": "api::subscription.subscription",
-      "mappedBy": "categories"
+      "inversedBy": "categories"
     }
   }
 }

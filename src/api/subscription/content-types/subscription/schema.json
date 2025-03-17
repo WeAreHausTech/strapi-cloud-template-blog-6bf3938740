@@ -22,7 +22,7 @@
       "type": "relation",
       "relation": "manyToMany",
       "target": "api::category.category",
-      "mappedBy": "subscriptions"
+      "inversedBy": "subscriptions"
     },
     "user": {
       "type": "relation",
