@@ -29,9 +29,9 @@
     },
     "subscriptions": {
       "type": "relation",
-      "relation": "oneToMany",
+      "relation": "manyToMany",
       "target": "api::subscription.subscription",
-      "mappedBy": "category"
+      "mappedBy": "categories"
     }
   }
 }

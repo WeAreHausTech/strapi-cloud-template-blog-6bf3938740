@@ -4,24 +4,13 @@
   "info": {
     "singularName": "subscription",
     "pluralName": "subscriptions",
-    "displayName": "Subscription"
+    "displayName": "Subscription",
+    "description": "User subscriptions to content categories"
   },
   "options": {
     "draftAndPublish": false
   },
-  "pluginOptions": {},
   "attributes": {
-    "user": {
-      "type": "relation",
-      "relation": "manyToOne",
-      "target": "plugin::users-permissions.user"
-    },
-    "category": {
-      "type": "relation",
-      "relation": "manyToOne",
-      "target": "api::category.category",
-      "inversedBy": "subscriptions"
-    },
     "startDate": {
       "type": "date",
       "required": true
@@ -29,15 +18,17 @@
     "endDate": {
       "type": "date"
     },
-    "status": {
-      "type": "enumeration",
-      "enum": [
-        "active",
-        "cancelled",
-        "expired"
-      ],
-      "required": true,
-      "default": "active"
+    "categories": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::category.category",
+      "mappedBy": "subscriptions"
+    },
+    "user": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user",
+      "inversedBy": "subscriptions"
     }
   }
 } 
