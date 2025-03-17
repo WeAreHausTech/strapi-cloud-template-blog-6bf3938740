@@ -8,4 +8,12 @@ export default [
       policies: [],
     },
   },
+  {
+    method: 'GET',
+    path: '/test-connection',
+    handler: 'controller.testConnection',
+    config: {
+      policies: [],
+    },
+  },
 ];

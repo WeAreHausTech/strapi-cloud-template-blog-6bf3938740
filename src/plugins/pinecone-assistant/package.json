@@ -23,8 +23,7 @@
     "test:ts:back": "run -T tsc -p server/tsconfig.json"
   },
   "dependencies": {
-    "@pinecone-database/pinecone": "^5.1.1",
-    "pinecone-assistant": "file:.yalc/pinecone-assistant"
+    "@pinecone-database/pinecone": "^5.1.1"
   },
   "devDependencies": {
     "@strapi/sdk-plugin": "^5.3.2",

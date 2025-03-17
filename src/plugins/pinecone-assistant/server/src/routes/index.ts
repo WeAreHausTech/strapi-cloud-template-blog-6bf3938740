@@ -4,10 +4,10 @@ import admin from './admin';
 export default {
   'content-api': {
     type: 'content-api',
-    routes: contentApi,
+    routes: [...contentApi],
   },
   admin: {
     type: 'admin',
-    routes: admin,
+    routes: [...admin],
   },
 };

@@ -5,10 +5,20 @@ const controller = ({ strapi }: { strapi: Core.Strapi }) => {
 
   return {
     index(ctx) {
-      ctx.body = strapi
-        .plugin('pinecone-assistant')
-        .service('service')
-        .getStatus();
+      ctx.body = { message: 'Pinecone Assistant plugin is running' };
+    },
+    async testConnection(ctx) {
+      try {
+        const result = await strapi.service('plugin::pinecone-assistant.service').testConnection();
+        ctx.body = result;
+      } catch (error) {
+        ctx.status = 500;
+        ctx.body = { 
+          status: 'error',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+          timestamp: new Date().toISOString()
+        };
+      }
     },
   };
 };
