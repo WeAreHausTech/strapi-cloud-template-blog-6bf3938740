@@ -16,4 +16,28 @@ export default [
       policies: [],
     },
   },
+  {
+    method: 'GET',
+    path: '/test-article',
+    handler: 'controller.testArticle',
+    config: {
+      policies: [],
+    },
+  },
+  {
+    method: 'GET',
+    path: '/list-articles',
+    handler: 'controller.listArticles',
+    config: {
+      policies: [],
+    },
+  },
+  {
+    method: 'POST',
+    path: '/force-reindex/:id',
+    handler: 'controller.forceReindexArticle',
+    config: {
+      policies: [],
+    },
+  }
 ];
