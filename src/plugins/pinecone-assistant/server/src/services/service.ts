@@ -110,12 +110,14 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
       try {
         // Process content blocks
         const blocksContent = processContentBlocks(article.blocks);
+        console.log('📝 Processed content blocks:', blocksContent);
         
         // Combine main content with blocks content
         const fullContent = [
           article.content,
           blocksContent
         ].filter(Boolean).join('\n\n');
+        console.log('📝 Combined full content:', fullContent);
 
         // Create the text to embed using markdown formatting
         const textToEmbed = [
@@ -123,19 +125,21 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
           '## Content',
           fullContent
         ].filter(Boolean).join('\n\n');
+        console.log('📝 Text to embed:', textToEmbed);
 
-        // Create the metadata with all values as strings
-        const metadata: Record<string, string> = {
+        // Create the metadata with simplified values
+        const metadata: Record<string, any> = {
           id: article.id.toString(),
           title: article.title,
-          description: article.description,
-          categories: JSON.stringify(article.categories),
-          author: JSON.stringify(article.author),
+          description: article.description || '',
+          categories: article.categories.map(c => c.name.toLowerCase()),
+          categoryIds: article.categories.map(c => c.id.toString()),
+          author: article.author ? article.author.name : 'Unknown',
           createdAt: article.createdAt,
           updatedAt: article.updatedAt,
           status: article.status,
           slug: article.slug,
-          cover: JSON.stringify(article.cover),
+          cover: article.cover ? JSON.stringify(article.cover) : '',
           documentId: article.documentId
         };
 
