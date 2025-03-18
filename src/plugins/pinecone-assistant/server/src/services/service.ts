@@ -56,23 +56,16 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
     if (!blocks || !Array.isArray(blocks)) return '';
 
     return blocks.map(block => {
+      console.log('🔍 Processing block:', block);
       switch (block.__component) {
-        case 'content.rich-text':
-          return block.content || '';
-        case 'content.paragraph':
-          return block.content || '';
-        case 'content.heading':
-          return block.content || '';
-        case 'content.list':
-          return Array.isArray(block.items) 
-            ? block.items.map(item => item.content || '').join('\n')
-            : '';
-        case 'content.code-block':
-          return block.code || '';
-        case 'content.quote':
-          return block.quote || '';
-        case 'content.image':
+        case 'shared.rich-text':
+          return block.body || '';
+        case 'shared.quote':
+          return `> ${block.body || ''}`;
+        case 'shared.media':
           return block.caption || '';
+        case 'shared.slider':
+          return 'Slider content not displayed';
         default:
           return '';
       }
@@ -108,6 +101,9 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
 
     async uploadArticle(article: Article) {
       try {
+        // Log the raw blocks data for debugging
+        console.log('🔍 Raw blocks data:', article.blocks);
+
         // Process content blocks
         const blocksContent = processContentBlocks(article.blocks);
         console.log('📝 Processed content blocks:', blocksContent);
@@ -121,7 +117,6 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
 
         // Create the text to embed using markdown formatting
         const textToEmbed = [
-          formatArticleToMarkdown(article),
           '## Content',
           fullContent
         ].filter(Boolean).join('\n\n');
@@ -149,6 +144,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
         const tempDir = os.tmpdir();
         const filePath = path.join(tempDir, `article-${article.id}.md`);
         await fs.promises.writeFile(filePath, textToEmbed);
+        console.log(`📝 Temporary file created at ${filePath} with content:\n${textToEmbed}`);
 
         // Upload to Pinecone
         await assistant.uploadFile({
@@ -255,11 +251,15 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
         const articles = await strapi.entityService.findMany('api::article.article', {
           populate: {
             categories: true,
-            author: true
+            author: true,
+            blocks: true // Ensure blocks are populated
           },
           status: 'published'  // Get only published articles
         });
         strapi.log.info(`Found ${articles.length} published articles in Strapi`);
+
+        // Log the fetched articles data for debugging
+        console.log('🔍 Fetched articles data:', JSON.stringify(articles, null, 2));
 
         // Wait before starting uploads (5 seconds)
         await sleep(5000);
@@ -348,101 +348,73 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
     },
 
     async inspectArticle(articleId: string | number) {
+      
+      console.log('🔍 ENTERING INSECT ARTICLE');
       try {
-        // Get both draft and published versions using the correct status parameter
-        const [draftArticle, publishedArticle] = await Promise.all([
-          strapi.entityService.findOne('api::article.article', articleId, {
-            populate: {
-              categories: true,
-              author: true
-            },
-            status: 'draft'  // Get draft version
-          }),
-          strapi.entityService.findOne('api::article.article', articleId, {
-            populate: {
-              categories: true,
-              author: true
-            },
-            status: 'published'  // Get published version
-          })
-        ]);
+        // Get only the published version
+        const publishedArticle = await strapi.entityService.findOne('api::article.article', articleId, {
+          populate: {
+            categories: true,
+            author: true,
+            blocks: true // Ensure blocks are populated
+          },
+          status: 'published'  // Get published version
+        });
 
-        if (!draftArticle && !publishedArticle) {
+        // Log the entire published article data for debugging
+        console.log('🔍 Full published article data:', JSON.stringify(publishedArticle, null, 2));
+
+        if (!publishedArticle) {
           return {
             status: 'error',
-            message: `Article ${articleId} not found`,
+            message: `Published article ${articleId} not found`,
             timestamp: new Date().toISOString()
           };
         }
 
+        // Process content blocks for the published version
+        const publishedContent = processContentBlocks(publishedArticle.blocks);
+
         // Log the raw article data for inspection
         strapi.log.info('Article inspection:', {
           id: articleId,
-          hasDraft: !!draftArticle,
           hasPublished: !!publishedArticle,
-          draft: draftArticle ? {
-            title: draftArticle.title,
-            publishedAt: draftArticle.publishedAt,
-            updatedAt: draftArticle.updatedAt,
-            documentId: draftArticle.documentId
-          } : null,
-          published: publishedArticle ? {
+          published: {
             title: publishedArticle.title,
             publishedAt: publishedArticle.publishedAt,
             updatedAt: publishedArticle.updatedAt,
-            documentId: publishedArticle.documentId
-          } : null
+            documentId: publishedArticle.documentId,
+            content: publishedContent
+          }
         });
 
         return {
           status: 'success',
           data: {
             id: articleId,
-            versions: {
-              draft: draftArticle ? {
-                title: draftArticle.title,
-                status: 'draft',
-                documentId: draftArticle.documentId,
-                timestamps: {
-                  publishedAt: draftArticle.publishedAt,
-                  createdAt: draftArticle.createdAt,
-                  updatedAt: draftArticle.updatedAt
-                },
-                categories: draftArticle.categories?.map(cat => ({
-                  id: cat.id,
-                  name: cat.name,
-                  publishedAt: cat.publishedAt
-                })),
-                author: draftArticle.author ? {
-                  id: draftArticle.author.id,
-                  name: draftArticle.author.name,
-                  publishedAt: draftArticle.author.publishedAt
-                } : null
+            version: {
+              title: publishedArticle.title,
+              status: 'published',
+              documentId: publishedArticle.documentId,
+              timestamps: {
+                publishedAt: publishedArticle.publishedAt,
+                createdAt: publishedArticle.createdAt,
+                updatedAt: publishedArticle.updatedAt
+              },
+              categories: publishedArticle.categories?.map(cat => ({
+                id: cat.id,
+                name: cat.name,
+                publishedAt: cat.publishedAt
+              })),
+              author: publishedArticle.author ? {
+                id: publishedArticle.author.id,
+                name: publishedArticle.author.name,
+                publishedAt: publishedArticle.author.publishedAt
               } : null,
-              published: publishedArticle ? {
-                title: publishedArticle.title,
-                status: 'published',
-                documentId: publishedArticle.documentId,
-                timestamps: {
-                  publishedAt: publishedArticle.publishedAt,
-                  createdAt: publishedArticle.createdAt,
-                  updatedAt: publishedArticle.updatedAt
-                },
-                categories: publishedArticle.categories?.map(cat => ({
-                  id: cat.id,
-                  name: cat.name,
-                  publishedAt: cat.publishedAt
-                })),
-                author: publishedArticle.author ? {
-                  id: publishedArticle.author.id,
-                  name: publishedArticle.author.name,
-                  publishedAt: publishedArticle.author.publishedAt
-                } : null
-              } : null
+              content: publishedContent
             },
             // Include raw data for debugging
             raw: {
-              draft: draftArticle,
               published: publishedArticle
             }
           },
@@ -534,6 +506,38 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
         };
       } catch (error) {
         strapi.log.error('Failed to handle article update:', error);
+        throw error;
+      }
+    },
+
+    async testArticle(articleId: string | number) {
+      console.log('🔍 ENTERING TEST ARTICLE');
+      try {
+        // Fetch the article from Strapi
+        const article = await strapi.entityService.findOne('api::article.article', articleId, {
+          populate: {
+            categories: true,
+            author: true,
+            blocks: true // Ensure blocks are populated
+          },
+          status: 'published'  // Get published version
+        }) as Article;
+
+        // Log the entire fetched article data for debugging
+        console.log('🔍 Full fetched article data:', JSON.stringify(article, null, 2));
+
+        if (!article) {
+          return {
+            status: 'error',
+            message: `Article ${articleId} not found`,
+            timestamp: new Date().toISOString()
+          };
+        }
+
+        // Upload the article to Pinecone
+        return await this.uploadArticle(article);
+      } catch (error) {
+        strapi.log.error('Failed to test article upload:', error);
         throw error;
       }
     }

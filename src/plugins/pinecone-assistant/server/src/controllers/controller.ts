@@ -24,20 +24,8 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
 
   async testArticle(ctx: Context) {
     try {
-      const article = await strapi.entityService.findOne('api::article.article', 1, {
-        populate: {
-          categories: true,
-          author: true
-        }
-      });
-
-      if (!article) {
-        ctx.status = 404;
-        ctx.body = { error: 'Test article not found' };
-        return;
-      }
-
-      const result = await strapi.service('plugin::pinecone-assistant.service').forceReindexArticle(article);
+      const articleId = 1; // Assuming article ID is 1 for testing
+      const result = await strapi.service('plugin::pinecone-assistant.service').testArticle(articleId);
       ctx.body = result;
     } catch (error) {
       ctx.status = 500;
@@ -81,6 +69,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
 
   async reindexAllArticles(ctx: Context) {
     try {
+      console.log('🔍 ENTERING REINDEX ALL ARTICLES');
       const result = await strapi.service('plugin::pinecone-assistant.service').reindexAllArticles();
       ctx.body = result;
     } catch (error) {
