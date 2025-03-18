@@ -52,6 +52,33 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
     };
   };
 
+  function processContentBlocks(blocks: any[]): string {
+    if (!blocks || !Array.isArray(blocks)) return '';
+
+    return blocks.map(block => {
+      switch (block.__component) {
+        case 'content.rich-text':
+          return block.content || '';
+        case 'content.paragraph':
+          return block.content || '';
+        case 'content.heading':
+          return block.content || '';
+        case 'content.list':
+          return Array.isArray(block.items) 
+            ? block.items.map(item => item.content || '').join('\n')
+            : '';
+        case 'content.code-block':
+          return block.code || '';
+        case 'content.quote':
+          return block.quote || '';
+        case 'content.image':
+          return block.caption || '';
+        default:
+          return '';
+      }
+    }).join('\n\n');
+  }
+
   return {
     getStatus() {
       return {
@@ -81,14 +108,43 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
 
     async uploadArticle(article: Article) {
       try {
-        const assistant = getPineconeClient();
-        const content = formatArticleToMarkdown(article);
-        const metadata = getArticleMetadata(article);
+        // Process content blocks
+        const blocksContent = processContentBlocks(article.blocks);
+        
+        // Combine main content with blocks content
+        const fullContent = [
+          article.content,
+          blocksContent
+        ].filter(Boolean).join('\n\n');
 
+        // Create the text to embed using markdown formatting
+        const textToEmbed = [
+          formatArticleToMarkdown(article),
+          '## Content',
+          fullContent
+        ].filter(Boolean).join('\n\n');
+
+        // Create the metadata with all values as strings
+        const metadata: Record<string, string> = {
+          id: article.id.toString(),
+          title: article.title,
+          description: article.description,
+          categories: JSON.stringify(article.categories),
+          author: JSON.stringify(article.author),
+          createdAt: article.createdAt,
+          updatedAt: article.updatedAt,
+          status: article.status,
+          slug: article.slug,
+          cover: JSON.stringify(article.cover),
+          documentId: article.documentId
+        };
+
+        const assistant = getPineconeClient();
+        
         // Create a temporary file with the content
         const tempDir = os.tmpdir();
         const filePath = path.join(tempDir, `article-${article.id}.md`);
-        await fs.promises.writeFile(filePath, content);
+        await fs.promises.writeFile(filePath, textToEmbed);
 
         // Upload to Pinecone
         await assistant.uploadFile({
@@ -99,6 +155,8 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
         // Clean up temporary file
         await fs.promises.unlink(filePath);
 
+        console.log(`✅ Article ${article.id} uploaded to Pinecone`);
+        
         return {
           status: 'success',
           message: `Article ${article.title} uploaded successfully`,
@@ -106,7 +164,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
           timestamp: new Date().toISOString()
         };
       } catch (error) {
-        strapi.log.error('Failed to upload article:', error);
+        console.error(`❌ Failed to upload article ${article.id} to Pinecone:`, error);
         throw error;
       }
     },
@@ -388,6 +446,90 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
         };
       } catch (error) {
         strapi.log.error('Failed to inspect article:', error);
+        throw error;
+      }
+    },
+
+    async handleArticleUpdate(articleId: string | number) {
+      try {
+        // Get both draft and published versions
+        const [draftArticle, publishedArticle] = await Promise.all([
+          strapi.entityService.findOne('api::article.article', articleId, {
+            populate: {
+              categories: true,
+              author: true
+            },
+            status: 'draft'
+          }),
+          strapi.entityService.findOne('api::article.article', articleId, {
+            populate: {
+              categories: true,
+              author: true
+            },
+            status: 'published'
+          })
+        ]);
+
+        // Log the update event
+        strapi.log.info('Article update detected:', {
+          articleId,
+          hasDraft: !!draftArticle,
+          hasPublished: !!publishedArticle,
+          draft: draftArticle ? {
+            id: draftArticle.id,
+            documentId: draftArticle.documentId,
+            publishedAt: draftArticle.publishedAt
+          } : null,
+          published: publishedArticle ? {
+            id: publishedArticle.id,
+            documentId: publishedArticle.documentId,
+            publishedAt: publishedArticle.publishedAt
+          } : null
+        });
+
+        // If there's a published version, update it in Pinecone
+        if (publishedArticle) {
+          const articleData: Article = {
+            id: publishedArticle.id,
+            title: publishedArticle.attributes?.title || publishedArticle.title,
+            description: publishedArticle.attributes?.description || publishedArticle.description,
+            content: publishedArticle.attributes?.content || publishedArticle.content,
+            locale: publishedArticle.attributes?.locale || publishedArticle.locale,
+            categories: publishedArticle.attributes?.categories?.data?.map(cat => ({
+              id: cat.id,
+              name: cat.attributes?.name || cat.name
+            })) || publishedArticle.categories,
+            author: publishedArticle.attributes?.author?.data ? {
+              id: publishedArticle.attributes.author.data.id,
+              name: publishedArticle.attributes.author.data.attributes?.name || publishedArticle.attributes.author.data.name
+            } : publishedArticle.author,
+            createdAt: publishedArticle.attributes?.createdAt || publishedArticle.createdAt,
+            updatedAt: publishedArticle.attributes?.updatedAt || publishedArticle.updatedAt,
+            status: 'published',
+            slug: publishedArticle.attributes?.slug || publishedArticle.slug,
+            cover: publishedArticle.attributes?.cover || publishedArticle.cover,
+            blocks: publishedArticle.attributes?.blocks || publishedArticle.blocks,
+            documentId: publishedArticle.documentId
+          };
+
+          // Delete the old version from Pinecone
+          await this.deleteArticle(publishedArticle.id);
+          
+          // Upload the updated version
+          await this.uploadArticle(articleData);
+          
+          strapi.log.info(`Updated published article ${articleData.id} in Pinecone`);
+        }
+
+        return {
+          status: 'success',
+          message: `Article ${articleId} update processed`,
+          hasDraft: !!draftArticle,
+          hasPublished: !!publishedArticle,
+          timestamp: new Date().toISOString()
+        };
+      } catch (error) {
+        strapi.log.error('Failed to handle article update:', error);
         throw error;
       }
     }
